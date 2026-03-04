@@ -6,27 +6,26 @@ import java.time.LocalDateTime
 
 @Entity
 @Table(name = "attendance")
-class Attendance(
-
+data class Attendance(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    var id: Long = 0,
+    val id: Long = 0,
 
-    @ManyToOne
-    @JoinColumn(name = "user_id")
-    var user: User,
+    val attendanceDate: LocalDate,
 
-    var attendanceType: String,
+    val checkInTime: LocalDateTime,
 
-    var checkInTime: LocalDateTime?,
-
-    var checkOutTime: LocalDateTime?,
-
-    var attendanceDate: LocalDate,
-
-    var workingHours: String?,
+    var checkOutTime: LocalDateTime? = null,
 
     var latitude: Double,
+    var longitude: Double,
 
-    var longitude: Double
+    val userId: Long,
+
+    var workingHours: String? = null,
+    var attendanceType: String? = null,
+
+    @Column(name = "address")
+    var address: String? = null
+
 )

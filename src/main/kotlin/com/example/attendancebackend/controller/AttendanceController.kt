@@ -2,103 +2,129 @@ package com.example.attendancebackend.controller
 
 import com.example.attendancebackend.dto.AttendanceRequest
 import com.example.attendancebackend.model.Attendance
-import com.example.attendancebackend.repository.AttendanceRepository
-import com.example.attendancebackend.repository.UserRepository
+import com.example.attendancebackend.service.AttendanceService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-import java.time.Duration
-import java.time.LocalDate
-import java.time.LocalDateTime
 
 @RestController
 @RequestMapping("/api/attendance")
-class AttendanceController(
-    private val attendanceRepo: AttendanceRepository,
-    private val userRepo: UserRepository
-) {
+class AttendanceController(private val attendanceService: AttendanceService) {
 
-    data class ApiResponse(
+    data class AttendanceResponse(
         val status: String,
         val message: String,
-        val checkInTime: LocalDateTime? = null,
-        val checkOutTime: LocalDateTime? = null,
-        val workingHours: String? = null,
+        val checkInTime: String? = null,
+        val checkOutTime: String? = null,
         val latitude: Double? = null,
-        val longitude: Double? = null
+        val longitude: Double? = null,
+        val workingHours: String? = null,
+        val tempDeviceRequestLink: String? = null // ✨ new field
     )
 
     // ================= CHECK-IN =================
     @PostMapping("/check-in")
-    fun checkIn(@RequestBody req: AttendanceRequest): ResponseEntity<ApiResponse> {
+    fun checkIn(@RequestBody request: AttendanceRequest): ResponseEntity<AttendanceResponse> {
+        return try {
+            val attendance = attendanceService.checkIn(request)
 
-        val user = userRepo.findById(req.userId).orElse(null)
-            ?: return ResponseEntity.badRequest()
-                .body(ApiResponse("ERROR", "User not found"))
-
-        val now = LocalDateTime.now()
-
-        val attendance = Attendance(
-            user = user,
-            attendanceType = "CHECK_IN",
-            checkInTime = now,
-            checkOutTime = null,
-            attendanceDate = LocalDate.now(),
-            workingHours = null,
-            latitude = req.latitude,
-            longitude = req.longitude
-        )
-
-        attendanceRepo.save(attendance)
-
-        return ResponseEntity.ok(
-            ApiResponse(
-                "SUCCESS",
-                "Check-in successful",
-                checkInTime = now,
-                latitude = req.latitude,
-                longitude = req.longitude
+            ResponseEntity.ok(
+                AttendanceResponse(
+                    status = "SUCCESS",
+                    message = "Check-in successful",
+                    checkInTime = attendance.checkInTime.toString(),
+                    latitude = attendance.latitude,
+                    longitude = attendance.longitude
+                )
             )
-        )
+        } catch (e: Exception) {
+            val msg = e.message ?: "Check-in failed"
+            val tempLink = if (msg.contains("Unauthorized device")) "/device-change/request" else null
+
+            ResponseEntity.badRequest().body(
+                AttendanceResponse(
+                    status = "ERROR",
+                    message = msg,
+                    tempDeviceRequestLink = tempLink
+                )
+            )
+        }
     }
+
+    // ================= CHECK-OUT =================
     @PostMapping("/check-out")
-    fun checkOut(@RequestBody req: AttendanceRequest): ResponseEntity<ApiResponse> {
+    fun checkOut(@RequestBody request: AttendanceRequest): ResponseEntity<AttendanceResponse> {
+        return try {
+            val attendance = attendanceService.checkOut(request)
+            ResponseEntity.ok(
+                AttendanceResponse(
+                    status = "SUCCESS",
+                    message = "Check-out successful",
+                    checkInTime = attendance.checkInTime.toString(),
+                    checkOutTime = attendance.checkOutTime?.toString(),
+                    latitude = attendance.latitude,
+                    longitude = attendance.longitude,
+                    workingHours = attendance.workingHours
+                )
+            )
+        } catch (e: Exception) {
+            val msg = e.message ?: "Check-out failed"
+            val tempLink = if (msg.contains("Unauthorized device")) "/device-change/request" else null
 
-        val activeAttendances = attendanceRepo.findActiveAttendances(req.userId)
+            ResponseEntity.badRequest().body(
+                AttendanceResponse(
+                    status = "ERROR",
+                    message = msg,
+                    tempDeviceRequestLink = tempLink
+                )
+            )
+        }
+    }
 
-        if (activeAttendances.isEmpty()) {
-            return ResponseEntity.badRequest()
-                .body(ApiResponse("ERROR", "No active check-in found"))
+    // ================= CURRENT TRIP =================
+    @GetMapping("/current-trip/{userId}")
+    fun getCurrentTrip(@PathVariable userId: Long): ResponseEntity<AttendanceResponse> {
+        val attendance = attendanceService.getCurrentOpenTrip(userId)
+
+        return if (attendance != null) {
+            ResponseEntity.ok(
+                AttendanceResponse(
+                    status = "SUCCESS",
+                    message = "Active trip found",
+                    checkInTime = attendance.checkInTime.toString(),
+                    checkOutTime = attendance.checkOutTime?.toString(),
+                    latitude = attendance.latitude,
+                    longitude = attendance.longitude,
+                    workingHours = attendance.workingHours
+                )
+            )
+        } else {
+            ResponseEntity.ok(
+                AttendanceResponse(
+                    status = "SUCCESS",
+                    message = "No active trip found"
+                )
+            )
+        }
+    }
+
+    // ================= TODAY TRIPS =================
+    @GetMapping("/today-trips/{userId}")
+    fun getTodayTrips(@PathVariable userId: Long): ResponseEntity<List<AttendanceResponse>> {
+
+        val trips = attendanceService.getAllTripsOfToday(userId)
+
+        val response = trips.map {
+            AttendanceResponse(
+                status = "SUCCESS",
+                message = "Trip record",
+                checkInTime = it.checkInTime.toString(),
+                checkOutTime = it.checkOutTime?.toString(),
+                latitude = it.latitude,
+                longitude = it.longitude,
+                workingHours = it.workingHours
+            )
         }
 
-        // Pick the latest active check-in
-        val attendance = activeAttendances.first()
-
-        val checkInTime = attendance.checkInTime
-            ?: return ResponseEntity.badRequest()
-                .body(ApiResponse("ERROR", "Invalid check-in data"))
-
-        val checkOutTime = LocalDateTime.now()
-        val duration = Duration.between(checkInTime, checkOutTime)
-        val hoursWorked = duration.toMinutes() / 60.0
-
-        attendance.checkOutTime = checkOutTime
-        attendance.attendanceType = "CHECK_OUT"
-        attendance.workingHours = String.format("%.2f", hoursWorked)
-        attendance.latitude = req.latitude
-        attendance.longitude = req.longitude
-
-        attendanceRepo.save(attendance)
-
-        return ResponseEntity.ok(
-            ApiResponse(
-                "SUCCESS",
-                "Check-out successful",
-                checkInTime = checkInTime,
-                checkOutTime = checkOutTime,
-                workingHours = attendance.workingHours,
-                latitude = req.latitude,
-                longitude = req.longitude
-            )
-        )
+        return ResponseEntity.ok(response)
     }
 }

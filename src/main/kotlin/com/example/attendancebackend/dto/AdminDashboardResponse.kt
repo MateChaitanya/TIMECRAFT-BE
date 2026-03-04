@@ -1,4 +1,8 @@
 package com.example.attendancebackend.dto
 
-class AdminDashboardResponse {
-}
+data class AdminDashboardResponse(
+    val totalEmployees: Long,
+    val presentToday: Long,
+    val absentToday: Long,
+    val pendingUsers: Long
+)

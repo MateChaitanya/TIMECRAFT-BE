@@ -1,4 +1,6 @@
 package com.example.attendancebackend.repository
 
-class CheckOutRepository {
-}
+import com.example.attendancebackend.model.CheckOut
+import org.springframework.data.jpa.repository.JpaRepository
+
+interface CheckOutRepository : JpaRepository<CheckOut, Long>

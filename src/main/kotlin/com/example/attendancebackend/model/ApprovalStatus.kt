@@ -1,4 +1,7 @@
 package com.example.attendancebackend.model
 
-class ApprovalStatus {
+enum class ApprovalStatus {
+    PENDING,
+    APPROVED,
+    REJECTED
 }

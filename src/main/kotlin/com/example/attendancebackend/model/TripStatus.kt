@@ -1,4 +1,6 @@
 package com.example.attendancebackend.model
 
-class TripStatus {
+enum class TripStatus {
+    Open,
+    Closed
 }

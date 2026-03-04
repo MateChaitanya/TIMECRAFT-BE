@@ -1,4 +1,8 @@
 package com.example.attendancebackend.repository
 
-class CheckInRepository {
-}
+import com.example.attendancebackend.model.CheckIn
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.stereotype.Repository
+
+@Repository
+interface CheckInRepository : JpaRepository<CheckIn, Long>

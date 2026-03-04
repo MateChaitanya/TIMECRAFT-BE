@@ -1,4 +1,9 @@
 package com.example.attendancebackend.dto
 
-class DeviceRequest {
-}
+data class DeviceRequest(
+    val deviceId: String,
+    val employeeId: Long,
+    val osVersion: String?,
+    val imeiOrAndroidId: String?,
+    val appIntegrityStatus: String?
+)

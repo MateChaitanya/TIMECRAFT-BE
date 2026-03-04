@@ -1,4 +1,7 @@
 package com.example.attendancebackend.controller.dto
 
-class CheckInRequest {
-}
+data class CheckInRequest(
+    val userId: Int,
+    val latitude: Double,
+    val longitude: Double
+)

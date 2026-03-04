@@ -1,4 +1,9 @@
 package com.example.attendancebackend.dto
 
-class SignUpRequest {
-}
+data class SignUpRequest(
+    val name: String,
+    val email: String,
+    val password: String,
+    val employeeId: Long,
+    val biometricToken: String? = null
+)

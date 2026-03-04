@@ -1,4 +1,6 @@
 package com.example.attendancebackend.model
 
-class EmployeeStatus {
+enum class EmployeeStatus {
+    Active,
+    Inactive
 }

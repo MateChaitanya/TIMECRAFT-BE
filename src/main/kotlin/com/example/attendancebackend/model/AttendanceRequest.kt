@@ -4,5 +4,10 @@ data class AttendanceRequest(
     val userId: Long,
     val latitude: Double,
     val longitude: Double,
-    val workingHours: Double? = null
+    val deviceId: String,
+    val osVersion: String?,
+    val imeiOrAndroidId: String?,
+    val appIntegrityStatus: String?
 )
+
+

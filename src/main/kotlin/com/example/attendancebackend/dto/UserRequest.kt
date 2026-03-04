@@ -1,4 +1,8 @@
 package com.example.attendancebackend.dto
 
-class UserRequest {
-}
+data class UserRequest(
+    val name: String,
+    val email: String,
+    val password: String,      // Added password
+    val fingerprint: String
+)
