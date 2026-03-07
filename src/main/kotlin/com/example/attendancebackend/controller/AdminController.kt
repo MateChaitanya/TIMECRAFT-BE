@@ -3,6 +3,7 @@ package com.example.attendancebackend.controller
 import com.example.attendancebackend.dto.AdminDashboardResponse
 import com.example.attendancebackend.model.User
 import com.example.attendancebackend.service.AdminService
+import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -19,8 +20,21 @@ class AdminController(
 
     // 2️⃣ Approve user
     @PutMapping("/approve/{userId}")
-    fun approveUser(@PathVariable userId: Long): User {
-        return adminService.approveUser(userId)
+    fun approveUser(@PathVariable userId: Long): ResponseEntity<Any> {
+        return try {
+
+            val user = adminService.approveUser(userId)
+
+            ResponseEntity.ok(user)
+
+        } catch (ex: RuntimeException) {
+
+            ResponseEntity.badRequest().body(
+                mapOf(
+                    "error" to ex.message
+                )
+            )
+        }
     }
 
     // 3️⃣ Reject user

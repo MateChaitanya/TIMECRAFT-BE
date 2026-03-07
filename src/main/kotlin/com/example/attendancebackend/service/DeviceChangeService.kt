@@ -15,12 +15,12 @@ class DeviceChangeService(
     private val employeeRepository: EmployeeRepository
 ) {
 
-    // 📌 USER requests device (temporary device now supported)
+    // 📌 USER requests device change
     fun requestDeviceChange(
         employeeId: Long,
         oldDeviceId: String,
         newDeviceId: String,
-        validDate: LocalDate = LocalDate.now() // default to today
+        validDate: LocalDate = LocalDate.now()
     ): DeviceChangeRequest {
 
         val employee = employeeRepository.findById(employeeId)
@@ -35,8 +35,7 @@ class DeviceChangeService(
             validDate = validDate
         )
 
-        // ✅ Save request to DB so admin can approve
-        return deviceChangeRequestRepository.saveAndFlush(request)
+        return deviceChangeRequestRepository.save(request)
     }
 
     // 👨‍💼 ADMIN get pending requests
@@ -46,21 +45,27 @@ class DeviceChangeService(
 
     // 👨‍💼 ADMIN approve request
     fun approveRequest(requestId: Long): DeviceChangeRequest {
+
         val request = deviceChangeRequestRepository.findById(requestId)
             .orElseThrow { RuntimeException("Request not found") }
 
         request.status = RequestStatus.APPROVED
         request.approvedAt = LocalDateTime.now()
 
+        // ✅ Temporary device allowed only today
+        request.validDate = LocalDate.now()
+
         return deviceChangeRequestRepository.save(request)
     }
 
     // 👨‍💼 ADMIN reject request
     fun rejectRequest(requestId: Long): DeviceChangeRequest {
+
         val request = deviceChangeRequestRepository.findById(requestId)
             .orElseThrow { RuntimeException("Request not found") }
 
         request.status = RequestStatus.REJECTED
+
         return deviceChangeRequestRepository.save(request)
     }
 }

@@ -25,14 +25,29 @@ class AttendanceService(
     private val deviceChangeRequestService: DeviceChangeRequestService
 ) {
 
+    // ================= GET EMPLOYEE FROM USER =================
+    private fun getEmployeeFromUser(userId: Long): Employee {
+
+        val user = userRepository.findById(userId)
+            .orElseThrow { RuntimeException("User not found with id $userId") }
+
+        val employeeId = user.employeeId
+            ?: throw RuntimeException("User is not linked to employee")
+
+        return employeeRepository.findById(employeeId)
+            .orElseThrow { RuntimeException("Employee not found with id $employeeId") }
+    }
+
+
     // ================= DEVICE VALIDATION =================
     private fun validateDevice(employee: Employee, deviceId: String) {
 
         val deviceById = deviceRepository.findByDeviceId(deviceId)
         val deviceForEmployee = deviceRepository.findByEmployeeEmployeeId(employee.employeeId)
 
-        // ===== FIRST TIME LOGIN (Permanent Registration) =====
+        // ===== FIRST LOGIN =====
         if (deviceById == null && deviceForEmployee == null) {
+
             val newDevice = Device(
                 deviceId = deviceId,
                 employee = employee,
@@ -40,6 +55,7 @@ class AttendanceService(
                 imeiOrAndroidId = deviceId,
                 appIntegrityStatus = "VALID"
             )
+
             deviceRepository.save(newDevice)
             return
         }
@@ -49,81 +65,76 @@ class AttendanceService(
             return
         }
 
-        // ===== CHECK IF TEMPORARY DEVICE APPROVED FOR TODAY =====
-        val approvedRequest = deviceChangeRequestRepository
-            .findByEmployee_EmployeeIdAndNewDeviceIdAndStatus(
-                employee.employeeId,
-                deviceId,
-                RequestStatus.APPROVED
-            ).firstOrNull()
-
-        if (approvedRequest != null && approvedRequest.approvedAt != null) {
-            if (approvedRequest.approvedAt!!.toLocalDate().isEqual(LocalDate.now())) {
-                // ✅ Allow temporary access for today
-                return
-            }
-        }
-
-        // ===== DEVICE BELONGS TO ANOTHER EMPLOYEE =====
-        if (deviceById != null && deviceById.employee.employeeId != employee.employeeId) {
-
-            val existingPending = deviceChangeRequestRepository
-                .findByEmployee_EmployeeIdAndNewDeviceIdAndStatus(
+        // ===== APPROVED TEMP DEVICE =====
+        val approvedRequest =
+            deviceChangeRequestRepository
+                .findTopByEmployee_EmployeeIdAndNewDeviceIdAndStatusOrderByApprovedAtDesc(
                     employee.employeeId,
                     deviceId,
-                    RequestStatus.PENDING
-                ).firstOrNull()
-
-            if (existingPending == null) {
-                val newRequest = DeviceChangeRequest(
-                    employee = employee,
-                    oldDeviceId = deviceForEmployee?.deviceId ?: "UNKNOWN",
-                    newDeviceId = deviceId,
-                    status = RequestStatus.PENDING,
-                    requestedAt = LocalDateTime.now()
+                    RequestStatus.APPROVED
                 )
-                deviceChangeRequestService.saveRequest(newRequest)
-            }
 
-            throw RuntimeException("This device belongs to another employee. Request sent to admin.")
+        if (approvedRequest != null &&
+            approvedRequest.validDate != null &&
+            approvedRequest.validDate!!.isEqual(LocalDate.now())
+        ) {
+            return
         }
 
-        // ===== DEVICE NOT REGISTERED BUT NOT APPROVED =====
-        val existingPending = deviceChangeRequestRepository
-            .findByEmployee_EmployeeIdAndNewDeviceIdAndStatus(
-                employee.employeeId,
-                deviceId,
-                RequestStatus.PENDING
-            ).firstOrNull()
+        // ===== DEVICE BELONGS TO OTHER EMPLOYEE =====
+        if (deviceById != null && deviceById.employee.employeeId != employee.employeeId) {
+
+            createDeviceChangeRequest(employee, deviceForEmployee?.deviceId, deviceId)
+
+            throw RuntimeException("Device belongs to another employee. Request sent to admin.")
+        }
+
+        // ===== UNKNOWN DEVICE =====
+        createDeviceChangeRequest(employee, deviceForEmployee?.deviceId, deviceId)
+
+        throw RuntimeException("Temporary device not approved.")
+    }
+
+
+    // ================= CREATE DEVICE CHANGE REQUEST =================
+    private fun createDeviceChangeRequest(
+        employee: Employee,
+        oldDevice: String?,
+        newDevice: String
+    ) {
+
+        val existingPending =
+            deviceChangeRequestRepository
+                .findTopByEmployee_EmployeeIdAndNewDeviceIdAndStatusOrderByRequestedAtDesc(
+                    employee.employeeId,
+                    newDevice,
+                    RequestStatus.PENDING
+                )
 
         if (existingPending == null) {
-            val newRequest = DeviceChangeRequest(
+
+            val request = DeviceChangeRequest(
                 employee = employee,
-                oldDeviceId = deviceForEmployee?.deviceId ?: "UNKNOWN",
-                newDeviceId = deviceId,
+                oldDeviceId = oldDevice ?: "UNKNOWN",
+                newDeviceId = newDevice,
                 status = RequestStatus.PENDING,
                 requestedAt = LocalDateTime.now()
             )
-            deviceChangeRequestService.saveRequest(newRequest)
-        }
 
-        throw RuntimeException("Temporary device not approved for today.")
+            deviceChangeRequestService.saveRequest(request)
+        }
     }
 
-    // ===================== CHECK-IN =========================
+
+    // ================= CHECK IN =================
     fun checkIn(request: AttendanceRequest): Attendance {
 
-        val user = userRepository.findById(request.employeeId)
-            .orElseThrow { RuntimeException("User not found") }
-
-        val employee = employeeRepository.findById(
-            user.employeeId ?: throw RuntimeException("User not linked to employee")
-        ).orElseThrow { RuntimeException("Employee not found") }
+        val employee = getEmployeeFromUser(request.employeeId)
 
         validateDevice(employee, request.deviceId)
 
-        val existingTrip = tripRepository
-            .findTopByEmployee_EmployeeIdAndStatusOrderByCheckInTimeDesc(
+        val existingTrip =
+            tripRepository.findTopByEmployee_EmployeeIdAndStatusOrderByCheckInTimeDesc(
                 employee.employeeId,
                 TripStatus.Open
             )
@@ -177,27 +188,24 @@ class AttendanceService(
         return attendanceRepository.save(attendance)
     }
 
-    // ===================== CHECK-OUT =========================
+
+    // ================= CHECK OUT =================
     fun checkOut(request: AttendanceRequest): Attendance {
 
-        val user = userRepository.findById(request.employeeId)
-            .orElseThrow { RuntimeException("User not found") }
-
-        val employee = employeeRepository.findById(
-            user.employeeId ?: throw RuntimeException("User not linked to employee")
-        ).orElseThrow { RuntimeException("Employee not found") }
+        val employee = getEmployeeFromUser(request.employeeId)
 
         validateDevice(employee, request.deviceId)
 
-        val trip = tripRepository
-            .findTopByEmployee_EmployeeIdAndStatusOrderByCheckInTimeDesc(
+        val trip =
+            tripRepository.findTopByEmployee_EmployeeIdAndStatusOrderByCheckInTimeDesc(
                 employee.employeeId,
                 TripStatus.Open
             ) ?: throw RuntimeException("No active check-in found")
 
-        val attendance = attendanceRepository
-            .findTopByUserIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(request.employeeId)
-            ?: throw RuntimeException("Attendance not found")
+        val attendance =
+            attendanceRepository
+                .findTopByUserIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(request.employeeId)
+                ?: throw RuntimeException("Attendance record not found")
 
         val now = LocalDateTime.now()
         val address = geocodingService.getAddressFromLatLng(request.latitude, request.longitude)
@@ -216,14 +224,15 @@ class AttendanceService(
             )
         )
 
-        val timeLog = timeLogRepository
-            .findTopByTrip_TripIdOrderByCheckInTimeDesc(trip.tripId)
-            ?: throw RuntimeException("TimeLog not found")
+        val timeLog =
+            timeLogRepository.findTopByTrip_TripIdOrderByCheckInTimeDesc(trip.tripId)
+                ?: throw RuntimeException("TimeLog not found")
 
         val duration = Duration.between(timeLog.checkInTime, now).toMinutes()
 
         timeLog.checkOutTime = now
         timeLog.durationMinutes = duration.toInt()
+
         timeLogRepository.save(timeLog)
 
         attendance.checkOutTime = now
@@ -237,13 +246,22 @@ class AttendanceService(
         return attendanceRepository.save(attendance)
     }
 
+
+    // ================= CURRENT OPEN TRIP =================
     fun getCurrentOpenTrip(userId: Long): Attendance? {
+
         return attendanceRepository
             .findTopByUserIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(userId)
     }
 
+
+    // ================= TODAY TRIPS =================
     fun getAllTripsOfToday(userId: Long): List<Attendance> {
+
         return attendanceRepository
-            .findAllByUserIdAndAttendanceDateOrderByCheckInTimeAsc(userId, LocalDate.now())
+            .findAllByUserIdAndAttendanceDateOrderByCheckInTimeAsc(
+                userId,
+                LocalDate.now()
+            )
     }
 }

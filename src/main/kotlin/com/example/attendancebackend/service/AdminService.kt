@@ -6,7 +6,9 @@ import com.example.attendancebackend.model.User
 import com.example.attendancebackend.repository.AttendanceRepository
 import com.example.attendancebackend.repository.EmployeeRepository
 import com.example.attendancebackend.repository.UserRepository
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDate
 
 @Service
@@ -21,8 +23,27 @@ class AdminService(
     }
 
     fun approveUser(userId: Long): User {
-        val user = userRepository.findById(userId).orElseThrow()
+
+        val user = userRepository.findById(userId)
+            .orElseThrow { RuntimeException("User not found") }
+
+        // ✅ Find employee using email
+        val employee = employeeRepository.findByEmail(user.email)
+
+        // ❗ IMPORTANT VALIDATION
+        if (employee == null) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Employee record not found. Please add employee details before approving this user."
+            )
+        }
+
+        // assign employee id
+        user.employeeId = employee.employeeId
+
+        // approve user
         user.approvalStatus = ApprovalStatus.APPROVED
+
         return userRepository.save(user)
     }
 
@@ -32,14 +53,12 @@ class AdminService(
         return userRepository.save(user)
     }
 
-    // ✅ FINAL DASHBOARD LOGIC
     fun getDashboard(): AdminDashboardResponse {
 
         val today = LocalDate.now()
 
         val totalEmployees = employeeRepository.count()
 
-        // 🔥 KEY FIX HERE
         val presentToday = attendanceRepository.countUniqueEmployeesPresent(today)
 
         val pendingUsers = userRepository.countByApprovalStatus(ApprovalStatus.PENDING)
